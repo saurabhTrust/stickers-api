@@ -174,7 +174,6 @@ const uploadImage = async (req, res) => {
   try {
     console.log('Image received:', req.file.filename);
     console.log('Metadata:', req.imageMetadata);
-    console.log(' Parameters:', req.body);
 
     const jobId = uuidv4();
     const uploadedFilePath = req.file.path;
@@ -220,6 +219,58 @@ const uploadImage = async (req, res) => {
     });
   }
 };
+
+//Text-based stickers generation.
+
+const generateTextStickers=async(req,res)=>{
+  try{
+    const {text,keywords}=req.body;
+    console.log('Text received:',text);
+    console.log('Keywords:',keywords);
+
+    const jobId=uuidv4();
+
+    //store job metadata
+    await jobStorage.storeJobMetadata(jobId,{
+      type:'text', //mark as text-based  job
+      text:text,
+      keywords:keywords,
+      createdAt:new Date().toISOString()
+    });
+
+    //Add job to queue with text data
+    const job=await addStickerJob({
+      jobId:jobId,
+      type:'text',
+      textData:{
+        text:text,
+        keywords:keywords
+       }
+    });
+    return res.status(202).json({
+      success:true,
+      message:'Text sticker job queued successfully',
+      data:{
+        jobId:jobId,
+        status:'queued',
+        statusUrl:`/api/status/${jobId}`,
+        estimatedTime:'30-60 seconds',
+        input:{
+          text:text,
+          keywords:keywords
+        }
+      }
+    });
+  }catch(error){
+    console.error(' Error in generateTextStickers:',error);
+    res.status(500).json({
+      success:false,
+      error:'Failed to queue text sticker job',
+      message:process.env.NODE_ENV==='development' ? error.message : undefined
+    });
+  }
+}
+
 
 // Get job status
 const getStatus = async (req, res) => {
@@ -302,6 +353,7 @@ const getStats = async (req, res) => {
 
 module.exports = {
   uploadImage,
+  generateTextStickers,
   getStatus,
   getStats
 };

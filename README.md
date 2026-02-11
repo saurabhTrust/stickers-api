@@ -1,6 +1,6 @@
 # 🎨 Sticker Generation API
 
-A production-grade asynchronous image processing API that generates multiple sticker variations from uploaded images using GPU-powered ML models.
+A production-grade asynchronous image processing API that generates multiple sticker variations from uploaded images or text input using GPU-powered ML models.
 
 ---
 
@@ -19,23 +19,27 @@ A production-grade asynchronous image processing API that generates multiple sti
 - [Development](#development)
 - [Production Deployment](#production-deployment)
 - [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
 
 ---
 
 ## 🎯 Overview
 
-This API accepts image uploads from users and generates multiple sticker variations using a GPU-powered machine learning model. The system uses an asynchronous architecture with job queues to handle long-running ML inference without blocking user requests.
+This API provides two modes of sticker generation:
+
+1. **Image-Based**: Upload an image and generate stylized sticker variations
+2. **Text-Based**: Provide text or keywords and generate text stickers
+
+The system uses an asynchronous architecture with job queues to handle long-running ML inference without blocking user requests.
 
 ### Key Capabilities
 
-- ✅ Asynchronous image processing
+- ✅ Dual-mode operation (image and text)
+- ✅ Asynchronous processing with job queues
 - ✅ Real-time job progress tracking
 - ✅ Automatic retry on failures
 - ✅ Horizontally scalable architecture
 - ✅ Production-ready error handling
 - ✅ File validation and security
-
 
 ---
 
@@ -43,6 +47,7 @@ This API accepts image uploads from users and generates multiple sticker variati
 
 ### User Features
 - Upload images via REST API
+- Generate stickers from text/keywords
 - Get instant job ID response
 - Poll for job status and progress
 - Retrieve generated stickers via URLs
@@ -54,7 +59,8 @@ This API accepts image uploads from users and generates multiple sticker variati
 - **Automatic Retries**: Failed jobs retry up to 3 times
 - **Progress Tracking**: Real-time progress updates (0-100%)
 - **Error Handling**: Graceful failure with clear error messages
-- **Validation**: Image format, size, and dimension checks
+- **Validation**: Image format, size, dimension, and text validation
+- **Rate Limiting**: Protection against abuse
 - **Logging**: Comprehensive request and error logging
 - **Scalability**: Add more workers for parallel processing
 
@@ -66,7 +72,7 @@ This API accepts image uploads from users and generates multiple sticker variati
 ┌─────────────┐
 │   Client    │
 └──────┬──────┘
-       │ HTTP POST (multipart/form-data)
+       │ HTTP POST
        ↓
 ┌──────────────────────┐
 │   API Server         │
@@ -96,7 +102,8 @@ This API accepts image uploads from users and generates multiple sticker variati
 ┌──────────────────────┐
 │   GPU Server         │
 │  (ML Model)          │
-│  - Generate stickers │
+│  - Image stickers    │
+│  - Text stickers     │
 └──────┬───────────────┘
        │
        ↓
@@ -112,7 +119,7 @@ This API accepts image uploads from users and generates multiple sticker variati
 1. **API Server**: Handles HTTP requests, file uploads, validation
 2. **Redis**: Job queue and metadata storage
 3. **Worker**: Background processor for ML tasks
-4. **GPU Server**: External ML inference service
+4. **GPU Server**: External ML inference service (image + text models)
 5. **File Storage**: Local or cloud storage for stickers
 
 ---
@@ -190,7 +197,9 @@ ALLOWED_FILE_TYPES=image/jpeg,image/png,image/jpg,image/webp
 
 # GPU Server Configuration
 GPU_SERVER_URL=http://localhost:5000/api/generate-stickers
+GPU_TEXT_SERVER_URL=http://localhost:5000/api/generate-text-stickers
 GPU_TIMEOUT=60000
+GPU_TEXT_TIMEOUT=30000
 
 # Redis Configuration
 REDIS_HOST=localhost
@@ -206,21 +215,6 @@ MAX_JOB_RETRIES=3
 JOB_TIMEOUT=300000
 MAX_CONCURRENT_JOBS=5
 ```
-
-### Configuration Details
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | API server port | 3000 |
-| `UPLOAD_MAX_SIZE` | Max file size in bytes | 10485760 (10MB) |
-| `ALLOWED_FILE_TYPES` | Comma-separated MIME types | image/jpeg,image/png,image/jpg,image/webp |
-| `GPU_SERVER_URL` | GPU server endpoint | http://localhost:5000/api/generate-stickers |
-| `GPU_TIMEOUT` | GPU request timeout (ms) | 60000 (60 seconds) |
-| `REDIS_HOST` | Redis server host | localhost |
-| `REDIS_PORT` | Redis server port | 6379 |
-| `MAX_JOB_RETRIES` | Retry attempts on failure | 3 |
-| `JOB_TIMEOUT` | Max job processing time (ms) | 300000 (5 minutes) |
-| `MAX_CONCURRENT_JOBS` | Parallel worker jobs | 5 |
 
 ---
 
@@ -282,13 +276,13 @@ pm2 save
 http://localhost:3000
 ```
 
-### Endpoints
-
 ---
 
-#### 1. Upload Image
+## 🖼️ Image-Based Sticker Generation
 
-Upload an image for sticker generation.
+### Upload Image
+
+Upload an image file to generate stickers.
 
 **Endpoint:** `POST /api/upload`
 
@@ -315,7 +309,19 @@ const response = await fetch('http://localhost:3000/api/upload', {
 });
 
 const data = await response.json();
-console.log(data.jobId); // Use this to check status
+console.log(data.jobId);
+```
+
+**Example using Python:**
+```python
+import requests
+
+with open('image.jpg', 'rb') as f:
+    files = {'image': f}
+    response = requests.post('http://localhost:3000/api/upload', files=files)
+
+data = response.json()
+job_id = data['data']['jobId']
 ```
 
 **Success Response (202 Accepted):**
@@ -334,7 +340,7 @@ console.log(data.jobId); // Use this to check status
 
 **Error Responses:**
 
-*400 Bad Request:*
+*400 Bad Request - No file:*
 ```json
 {
   "success": false,
@@ -342,7 +348,7 @@ console.log(data.jobId); // Use this to check status
 }
 ```
 
-*400 Bad Request (Invalid file type):*
+*400 Bad Request - Invalid file type:*
 ```json
 {
   "success": false,
@@ -361,14 +367,134 @@ console.log(data.jobId); // Use this to check status
 
 ---
 
-#### 2. Check Job Status
+## 📝 Text-Based Sticker Generation
 
-Get the current status and results of a job.
+### Generate Text Stickers
+
+Generate stickers from text or keywords.
+
+**Endpoint:** `POST /api/generate-text`
+
+**Request:**
+- Method: `POST`
+- Content-Type: `application/json`
+- Body (one or both required):
+  - `text` (string, optional): Text to generate stickers for (max 200 characters)
+  - `keywords` (array, optional): Keywords for sticker generation (max 10 items)
+
+**Example 1: Text Only**
+
+```bash
+curl -X POST http://localhost:3000/api/generate-text \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Happy Birthday!"}'
+```
+
+**Example 2: Keywords Only**
+
+```bash
+curl -X POST http://localhost:3000/api/generate-text \
+  -H "Content-Type: application/json" \
+  -d '{"keywords": ["happy", "birthday", "celebration"]}'
+```
+
+**Example 3: Both Text and Keywords**
+
+```bash
+curl -X POST http://localhost:3000/api/generate-text \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Happy Birthday!",
+    "keywords": ["party", "cake", "celebration"]
+  }'
+```
+
+**Example using JavaScript:**
+```javascript
+const response = await fetch('http://localhost:3000/api/generate-text', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    text: "Happy Birthday!",
+    keywords: ["party", "cake"]
+  })
+});
+
+const data = await response.json();
+console.log(data.jobId);
+```
+
+**Example using Python:**
+```python
+import requests
+
+payload = {
+    "text": "Happy Birthday!",
+    "keywords": ["party", "cake", "celebration"]
+}
+
+response = requests.post(
+    'http://localhost:3000/api/generate-text',
+    json=payload
+)
+
+data = response.json()
+job_id = data['data']['jobId']
+```
+
+**Success Response (202 Accepted):**
+```json
+{
+  "success": true,
+  "message": "Text sticker job queued successfully",
+  "data": {
+    "jobId": "xyz-789",
+    "status": "queued",
+    "statusUrl": "/api/status/xyz-789",
+    "estimatedTime": "15-30 seconds",
+    "input": {
+      "text": "Happy Birthday!",
+      "keywords": ["party", "cake", "celebration"]
+    }
+  }
+}
+```
+
+**Error Responses:**
+
+*400 Bad Request - No input:*
+```json
+{
+  "success": false,
+  "error": "Either \"text\" or \"keywords\" field is required"
+}
+```
+
+*400 Bad Request - Text too long:*
+```json
+{
+  "success": false,
+  "error": "Text must be 200 characters or less"
+}
+```
+
+*400 Bad Request - Too many keywords:*
+```json
+{
+  "success": false,
+  "error": "Maximum 10 keywords allowed"
+}
+```
+
+---
+
+## 📊 Check Job Status
+
+Get the current status and results of a job (works for both image and text jobs).
 
 **Endpoint:** `GET /api/status/:jobId`
-
-**Parameters:**
-- `jobId` (path parameter): Job ID from upload response
 
 **Example:**
 ```bash
@@ -408,7 +534,7 @@ curl http://localhost:3000/api/status/a1b2c3d4-e5f6-7890-abcd-ef1234567890
 }
 ```
 
-**Response (Completed):**
+**Response (Completed - Image Job):**
 ```json
 {
   "success": true,
@@ -426,8 +552,33 @@ curl http://localhost:3000/api/status/a1b2c3d4-e5f6-7890-abcd-ef1234567890
   "processingTime": "2.34s",
   "completedAt": "2024-02-09T10:30:15.000Z",
   "metadata": {
+    "type": "image",
     "originalName": "vacation.jpg",
     "uploadedAt": "2024-02-09T10:30:00.000Z"
+  }
+}
+```
+
+**Response (Completed - Text Job):**
+```json
+{
+  "success": true,
+  "jobId": "xyz-789",
+  "status": "completed",
+  "progress": 100,
+  "stickers": [
+    "http://localhost:3000/stickers/text-sticker-xyz-789-1.png",
+    "http://localhost:3000/stickers/text-sticker-xyz-789-2.png",
+    "http://localhost:3000/stickers/text-sticker-xyz-789-3.png"
+  ],
+  "count": 3,
+  "processingTime": "1.5s",
+  "completedAt": "2024-02-09T10:30:15.000Z",
+  "metadata": {
+    "type": "text",
+    "text": "Happy Birthday!",
+    "keywords": ["party", "cake"],
+    "createdAt": "2024-02-09T10:30:00.000Z"
   }
 }
 ```
@@ -458,7 +609,7 @@ curl http://localhost:3000/api/status/a1b2c3d4-e5f6-7890-abcd-ef1234567890
 
 ---
 
-#### 3. Get Queue Statistics
+## 📊 Get Queue Statistics
 
 Get current queue statistics.
 
@@ -487,29 +638,7 @@ curl http://localhost:3000/api/stats
 
 ---
 
-#### 4. Health Check
-
-Check if the API is running.
-
-**Endpoint:** `GET /health`
-
-**Example:**
-```bash
-curl http://localhost:3000/health
-```
-
-**Response:**
-```json
-{
-  "status": "healthy",
-  "timestamp": "2024-02-09T10:35:00.000Z",
-  "uptime": 3600.5
-}
-```
-
----
-
-#### 5. Download Sticker
+## 🖼️ Download Sticker
 
 Access a generated sticker image.
 
@@ -530,7 +659,7 @@ curl -O http://localhost:3000/stickers/sticker-a1b2c3d4-1.png
 
 ---
 
-### Status Codes
+## 📊 Status Codes
 
 | Code | Meaning |
 |------|---------|
@@ -552,118 +681,82 @@ sticker-api/
 ├── src/
 │   ├── config/              # Configuration files
 │   │   └── gpuConfig.js     # GPU server configuration
-│   ├── controllers/         # Request handlers (business logic)
+│   ├── controllers/         # Request handlers
 │   │   └── imageController.js
-│   ├── middleware/          # Request processing middleware
-│   │   ├── errorHandler.js  # Global error handler
-│   │   ├── uploadMiddleware.js  # File upload handling
-│   │   └── validation.js    # Input validation
+│   ├── middleware/          # Request processing
+│   │   ├── errorHandler.js
+│   │   ├── rateLimiter.js
+│   │   ├── uploadMiddleware.js
+│   │   ├── validation.js
+│   │   └── textValidation.js
 │   ├── routes/              # API route definitions
 │   │   └── imageRoutes.js
-│   ├── services/            # External service interactions
-│   │   ├── gpuService.js    # GPU server communication
-│   │   ├── imageProcessor.js  # Image manipulation
-│   │   ├── jobStorage.js    # Job metadata storage
-│   │   ├── queueService.js  # Queue management
-│   │   └── storageService.js  # File storage
-│   ├── workers/             # Background job processors
+│   ├── services/            # External services
+│   │   ├── gpuService.js
+│   │   ├── textGpuService.js
+│   │   ├── imageProcessor.js
+│   │   ├── jobStorage.js
+│   │   ├── queueService.js
+│   │   └── storageService.js
+│   ├── workers/             # Background processors
 │   │   └── stickerWorker.js
-│   └── server.js            # Main application entry point
-├── uploads/                 # Temporary uploaded files
-│   └── stickers/           # Generated sticker files
-├── temp/                    # Temporary processing files
-├── .env                     # Environment variables (not in git)
-├── .gitignore              # Git ignore rules
-├── package.json            # Dependencies and scripts
-├── worker.js               # Worker process entry point
-├── mock-gpu-server.js      # Mock GPU server for testing
-└── README.md               # This file
+│   └── server.js            # Main entry point
+├── uploads/                 # Temporary uploads
+│   └── stickers/           # Generated stickers
+├── temp/                    # Temporary processing
+├── .env                     # Environment config
+├── .gitignore
+├── package.json
+├── worker.js               # Worker entry point
+├── mock-gpu-server.js      # Mock GPU for testing
+└── README.md
 ```
-
-### File Descriptions
-
-#### `/src/server.js`
-Main application entry point. Sets up Express server, middleware, routes, and error handling.
-
-#### `/src/routes/imageRoutes.js`
-Defines API endpoints and connects them to controller functions with middleware chain.
-
-#### `/src/controllers/imageController.js`
-Business logic for handling requests. Coordinates between services to process uploads and check status.
-
-#### `/src/middleware/uploadMiddleware.js`
-Handles file uploads using Multer. Configures storage, file filtering, and size limits.
-
-#### `/src/middleware/validation.js`
-Validates uploaded images using Sharp. Checks dimensions, format, and file integrity.
-
-#### `/src/middleware/errorHandler.js`
-Global error handler. Catches all errors and returns user-friendly messages.
-
-#### `/src/middleware/rateLimiter.js`
-Rate limiting middleware. Protects API from abuse with configurable limits.
-
-#### `/src/services/imageProcessor.js`
-Image manipulation service. Handles resizing, format conversion, base64 encoding/decoding.
-
-#### `/src/services/gpuService.js`
-GPU server communication. Sends images to ML model and receives generated stickers.
-
-#### `/src/services/queueService.js`
-Job queue management using Bull. Handles job creation, status tracking, and statistics.
-
-#### `/src/services/jobStorage.js`
-Stores job metadata and sticker URLs in Redis. Provides fast access to job information.
-
-#### `/src/services/storageService.js`
-File storage service. Saves stickers to disk and generates public URLs.
-
-#### `/src/workers/stickerWorker.js`
-Background worker process. Processes jobs from queue, handles ML inference, saves results.
-
-#### `/worker.js`
-Worker process entry point. Starts the worker and handles graceful shutdown.
-
-#### `/mock-gpu-server.js`
-Mock GPU server for testing. Simulates ML model responses without real GPU.
 
 ---
 
 ## 🔍 How It Works
 
-### Complete Request Flow
+### Complete Flow
 
+**Image-Based Generation:**
 ```
 1. User uploads image
-   ↓
-2. API receives file
-   ↓
-3. Middleware validates file
-   ↓
-4. Controller creates job
-   ↓
-5. Job added to Redis queue
-   ↓
-6. API returns job ID (202 Accepted)
-   ↓
-7. Worker picks up job from queue
-   ↓
-8. Worker preprocesses image
-   ↓
+2. API validates file (type, size, dimensions)
+3. Job created with unique ID
+4. Job added to Redis queue
+5. API returns job ID (202 Accepted)
+6. Worker picks up job from queue
+7. Worker preprocesses image (resize to 512x512)
+8. Worker converts to base64
 9. Worker sends to GPU server
-   ↓
-10. GPU generates stickers
-    ↓
-11. Worker saves stickers to disk
-    ↓
+10. GPU generates 5 stickers
+11. Worker receives base64 stickers
+12. Worker converts to PNG files
+13. Worker saves to disk
+14. Worker stores URLs in Redis
+15. Job marked as completed
+16. User polls status endpoint
+17. API returns sticker URLs
+18. User downloads stickers
+```
+
+**Text-Based Generation:**
+```
+1. User sends text/keywords (JSON)
+2. API validates input
+3. Job created with unique ID
+4. Job added to Redis queue
+5. API returns job ID (202 Accepted)
+6. Worker picks up job from queue
+7. Worker sends text/keywords to GPU
+8. GPU generates 3 text stickers
+9. Worker receives base64 stickers
+10. Worker converts to PNG files
+11. Worker saves to disk
 12. Worker stores URLs in Redis
-    ↓
 13. Job marked as completed
-    ↓
 14. User polls status endpoint
-    ↓
 15. API returns sticker URLs
-    ↓
 16. User downloads stickers
 ```
 
@@ -683,15 +776,21 @@ created → waiting → active → completed
 
 ### Progress Tracking
 
-Progress is updated at key milestones:
+**Image Jobs:**
+- 0%: Job queued
+- 10%: Preprocessing started
+- 30%: Converted to base64
+- 40%: Sent to GPU
+- 70%: GPU completed, saving stickers
+- 90%: Stickers saved, cleaning up
+- 100%: Job completed
 
-- **0%**: Job queued
-- **10%**: Image preprocessing started
-- **30%**: Converted to base64
-- **40%**: Sent to GPU
-- **70%**: GPU completed, saving stickers
-- **90%**: Stickers saved, cleaning up
-- **100%**: Job completed
+**Text Jobs:**
+- 0%: Job queued
+- 10%: Request validated
+- 50%: GPU completed
+- 90%: Stickers saved
+- 100%: Job completed
 
 ---
 
@@ -713,54 +812,34 @@ npm start
 npm run worker
 ```
 
-### Adding New Features
-
-1. **Add new endpoint:**
-   - Define route in `src/routes/imageRoutes.js`
-   - Add controller function in `src/controllers/imageController.js`
-   - Add validation if needed in `src/middleware/validation.js`
-
-2. **Add new service:**
-   - Create new file in `src/services/`
-   - Export service instance
-   - Import and use in controllers/workers
-
-3. **Modify job processing:**
-   - Edit `src/workers/stickerWorker.js`
-   - Update progress tracking as needed
-   - Test with mock GPU server first
-
 ### Testing
 
 **Manual Testing:**
 
 ```bash
-# Upload test
+# Test image upload
 curl -X POST http://localhost:3000/api/upload \
   -F "image=@test-image.jpg"
 
-# Status check
+# Test text generation
+curl -X POST http://localhost:3000/api/generate-text \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Happy Birthday!"}'
+
+# Check status
 curl http://localhost:3000/api/status/JOB_ID
 
 # Queue stats
 curl http://localhost:3000/api/stats
-
-# Health check
-curl http://localhost:3000/health
 ```
 
-**Load Testing (using Apache Bench):**
+**Using Postman:**
 
-```bash
-# Install Apache Bench (if needed)
-sudo apt install apache2-utils  # Ubuntu
-brew install httpd              # macOS
-
-# Test concurrent uploads
-ab -n 100 -c 10 -p test-image.jpg \
-   -T "multipart/form-data" \
-   http://localhost:3000/api/upload
-```
+Import the provided `Sticker-API.postman_collection.json` file:
+1. Open Postman
+2. Click "Import"
+3. Select the JSON file
+4. All requests ready to use
 
 ---
 
@@ -773,7 +852,8 @@ ab -n 100 -c 10 -p test-image.jpg \
 npm install -g pm2
 
 # Start services
-pm2 start ecosystem.config.js
+pm2 start src/server.js --name sticker-api
+pm2 start worker.js --name sticker-worker
 
 # Monitor
 pm2 monit
@@ -804,23 +884,6 @@ docker build -t sticker-api .
 docker-compose up -d
 ```
 
-### Environment Considerations
-
-**Development:**
-- Use mock GPU server
-- Enable detailed logging
-- Single worker instance
-
-**Production:**
-- Connect to real GPU server
-- Disable mock GPU server
-- Multiple worker instances
-- Use managed Redis (AWS ElastiCache, etc.)
-- Use cloud storage (S3, GCS)
-- Enable monitoring (Sentry, DataDog)
-- Configure SSL/TLS
-- Set up load balancer
-
 ### Scaling
 
 **Horizontal Scaling:**
@@ -842,9 +905,7 @@ pm2 scale sticker-api 3     # Run 3 API instances
 
 ## 🐛 Troubleshooting
 
-### Common Issues
-
-#### Redis Connection Error
+### Redis Connection Error
 
 **Error:**
 ```
@@ -863,7 +924,9 @@ redis-server
 redis-cli info
 ```
 
-#### Upload Fails
+---
+
+### Upload Fails
 
 **Error:**
 ```
@@ -875,7 +938,9 @@ redis-cli info
 - Field name must be `image`
 - File must be JPEG, PNG, or WEBP
 
-#### Worker Not Processing Jobs
+---
+
+### Worker Not Processing Jobs
 
 **Symptoms:**
 - Jobs stuck in "waiting" state
@@ -895,7 +960,9 @@ redis-cli
 > GET bull:sticker-generation:*
 ```
 
-#### GPU Server Timeout
+---
+
+### GPU Server Timeout
 
 **Error:**
 ```
@@ -908,7 +975,9 @@ redis-cli
 - Check GPU server logs
 - Verify network connectivity
 
-#### Out of Disk Space
+---
+
+### Out of Disk Space
 
 **Error:**
 ```
@@ -930,70 +999,6 @@ rm -rf temp/*
 redis-cli FLUSHALL
 ```
 
-#### High Memory Usage
-
-**Solution:**
-```bash
-# Monitor memory
-pm2 monit
-
-# Reduce concurrent jobs
-# Edit .env:
-MAX_CONCURRENT_JOBS=2
-
-# Restart worker
-pm2 restart sticker-worker
-
-# Enable automatic cleanup in worker
-# (already implemented in imageProcessor.cleanup)
-```
-
----
-
-## 📊 Monitoring
-
-### Logs
-
-**API Server logs:**
-```bash
-pm2 logs sticker-api
-```
-
-**Worker logs:**
-```bash
-pm2 logs sticker-worker
-```
-
-**Redis logs:**
-```bash
-redis-cli
-> MONITOR
-```
-
-### Metrics to Track
-
-- Request rate (requests/second)
-- Response time (milliseconds)
-- Queue depth (jobs waiting)
-- Processing time (seconds per job)
-- Success rate (%)
-- Error rate (%)
-- Disk usage (MB/GB)
-- Memory usage (MB/GB)
-
-### Health Checks
-
-```bash
-# API health
-curl http://localhost:3000/health
-
-# Queue stats
-curl http://localhost:3000/api/stats
-
-# Redis health
-redis-cli ping
-```
-
 ---
 
 ## 🔒 Security Considerations
@@ -1002,6 +1007,7 @@ redis-cli ping
 
 - ✅ File type validation
 - ✅ File size limits
+- ✅ Rate limiting
 - ✅ Input sanitization
 - ✅ Error message sanitization
 - ✅ Helmet.js security headers
@@ -1011,44 +1017,21 @@ redis-cli ping
 
 - [ ] API authentication (API keys, JWT)
 - [ ] User accounts and quotas
-- [ ] Image content filtering (NSFW detection)
+- [ ] Image content filtering
 - [ ] Request signing
 - [ ] HTTPS/TLS
 - [ ] Firewall rules
 - [ ] DDoS protection
 - [ ] Audit logging
 
+---
 
-## 🤝 Contributing
 
-### Development Setup
-
-1. Fork the repository
-2. Clone your fork
-3. Create a feature branch
-4. Make changes
-5. Test thoroughly
-6. Submit pull request
-
-### Code Style
-
-- Use ES6+ features
-- Follow existing patterns
-- Add comments for complex logic
-- Update README for new features
-
-### Commit Messages
-
-```
-feat: Add batch upload support
-fix: Resolve Redis connection issue
-docs: Update API documentation
-refactor: Simplify image preprocessing
-```
 ## 🙏 Acknowledgments
 
 - Express.js team
 - Bull queue library
 - Sharp image processing
 - Redis community
+
 

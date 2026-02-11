@@ -47,5 +47,7 @@ app.listen(PORT,()=>{
     console.log("server is running on port "+PORT);
     console.log(`http://localhost:${PORT}`);
     console.log(` Upload endpoint: POST http://localhost:${PORT}/api/upload`);
+    console.log(` Text-based sticker generation endpoint: POST http://localhost:${PORT}/api/generate-text-stickers`);
 })
+
 
