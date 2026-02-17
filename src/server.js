@@ -24,14 +24,38 @@ app.use('/stickers', express.static(path.join(__dirname, '../uploads/stickers'))
 
 //Routes
 const imageRoutes=require('./routes/imageRoutes');
+const authRoutes=require('./routes/authRoutes');
 const errorHandler=require('./middleware/errorHandler');
 
-// Sample route
-app.get('/',(req,res)=>{
-    res.send('Hello World!');
-}); 
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Sticker Generation API',
+    version: '1.0.0',
+    authentication: 'enabled',
+    endpoints: {
+      auth: {
+        register: 'POST /api/auth/register',
+        login: 'POST /api/auth/login',
+        profile: 'GET /api/auth/profile (requires auth)',
+        refresh: 'POST /api/auth/refresh (requires auth)'
+      },
+      stickers: {
+        image_upload: 'POST /api/upload (requires auth)',
+        text_generation: 'POST /api/generate-text (requires auth)',
+        job_status: 'GET /api/status/:jobId (optional auth)',
+        queue_stats: 'GET /api/stats (optional auth)'
+      }
+    },
+    auth_methods: {
+      api_key: 'X-API-Key header',
+      jwt: 'Authorization: Bearer <token>'
+    }
+  });
+});
 
 //API routes
+app.use('/api/auth',authRoutes);
 app.use('/api',imageRoutes);
 
 //Error handling middleware
@@ -46,6 +70,7 @@ const PORT=process.env.PORT;
 app.listen(PORT,()=>{
     console.log("server is running on port "+PORT);
     console.log(`http://localhost:${PORT}`);
+    console.log(`Authentication endpoints: POST http://localhost:${PORT}/api/auth/register and POST http://localhost:${PORT}/api/auth/login`);
     console.log(` Upload endpoint: POST http://localhost:${PORT}/api/upload`);
     console.log(` Text-based sticker generation endpoint: POST http://localhost:${PORT}/api/generate-text-stickers`);
 })
