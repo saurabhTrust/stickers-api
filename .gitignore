@@ -1,0 +1,22 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment
+.env
+
+# Models (VERY IMPORTANT — huge files)
+model_cache/
+models/
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+lokiImage.jpeg
